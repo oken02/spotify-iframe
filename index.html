@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Spotify Embed - Vanilla HTML/JS</title>
+  <style>
+    /* Estilos mínimos (puedes ajustarlos o eliminarlos) */
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: 20px; }
+    .app { max-width: 900px; margin: 0 auto; }
+    header h1 { margin: 0 0 8px 0; }
+    .controls { margin-top: 12px; display:flex; gap:8px; align-items:center; }
+    button { padding: 8px 12px; border-radius:6px; border:1px solid #ccc; background:#fff; cursor:pointer; }
+    input[type="text"] { padding:8px; border-radius:6px; border:1px solid #ccc; min-width:320px; }
+    #embedContainer { margin-top:16px; }
+    p.loading { color: #666; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Hello CodeSandbox</h1>
+      <h2>Start editing to see some magic happen!</h2>
+    </header>
+
+    <main>
+      <div id="embedContainer"></div>
+      <p id="loading" class="loading">Loading...</p>
+
+      <div class="controls">
+        <button id="playBtn" aria-label="Play">Play</button>
+        <button id="pauseBtn" aria-label="Pause">Pause</button>
+        <div style="margin-left:16px;">
+          <label for="uriInput">Change URI:</label>
+          <input id="uriInput" type="text" placeholder="Enter Spotify URI" />
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      // Valores iniciales (igual que en tu componente React)
+      const defaultUri = "spotify:playlist:68NFBa3JSlhwLjJ1Vt2umu";
+
+      // Referencias a elementos
+      const embedContainer = document.getElementById("embedContainer");
+      const loadingEl = document.getElementById("loading");
+      const playBtn = document.getElementById("playBtn");
+      const pauseBtn = document.getElementById("pauseBtn");
+      const uriInput = document.getElementById("uriInput");
+
+      // Estado local
+      let spotifyEmbedController = null;
+      let iFrameAPI = undefined;
+      let playerLoaded = false;
+      let currentUri = defaultUri;
+      let playbackUpdateHandler = null;
+
+      // Inicializar input con el URI por defecto
+      uriInput.value = defaultUri;
+
+      // Añadir script de la API de Spotify Embed
+      const script = document.createElement("script");
+      script.src = "https://open.spotify.com/embed/iframe-api/v1";
+      script.async = true;
+      document.body.appendChild(script);
+
+      // Callback que la API de Spotify llamará cuando esté lista
+      window.onSpotifyIframeApiReady = function (SpotifyIframeApi) {
+        iFrameAPI = SpotifyIframeApi;
+        tryCreateController();
+      };
+
+      // Intenta crear el controlador si la API está lista y no hay controlador aún
+      function tryCreateController() {
+        if (!iFrameAPI || playerLoaded) return;
+
+        iFrameAPI.createController(
+          embedContainer,
+          {
+            width: "100%",
+            height: "352",
+            uri: currentUri,
+          },
+          function (spotifyEmbedControllerInstance) {
+            spotifyEmbedController = spotifyEmbedControllerInstance;
+
+            spotifyEmbedController.addListener("ready", function () {
+              playerLoaded = true;
+              loadingEl.style.display = "none";
+              console.log("Spotify embed ready");
+            });
+
+            // playback_update handler (guardamos la referencia para poder quitarlo)
+            playbackUpdateHandler = function (e) {
+              const { position, duration, isBuffering, isPaused, playingURI } = e.data || {};
+              console.log(
+                `Playback State updates:
+  position - ${position},
+  duration - ${duration},
+  isBuffering - ${isBuffering},
+  isPaused - ${isPaused},
+  playingURI - ${playingURI}`
+              );
+            };
+
+            spotifyEmbedController.addListener("playback_update", playbackUpdateHandler);
+
+            spotifyEmbedController.addListener("playback_started", function (e) {
+              const { playingURI } = e.data || {};
+              console.log(`The playback has started for: ${playingURI}`);
+            });
+          }
+        );
+      }
+
+      // Botones Play / Pause
+      playBtn.addEventListener("click", function () {
+        if (spotifyEmbedController && typeof spotifyEmbedController.play === "function") {
+          spotifyEmbedController.play();
+        } else {
+          console.warn("Controller no disponible aún.");
+        }
+      });
+
+      pauseBtn.addEventListener("click", function () {
+        if (spotifyEmbedController && typeof spotifyEmbedController.pause === "function") {
+          spotifyEmbedController.pause();
+        } else {
+          console.warn("Controller no disponible aún.");
+        }
+      });
+
+      // Cambio de URI (al escribir en el input)
+      uriInput.addEventListener("input", function (ev) {
+        const newUri = ev.target.value;
+        currentUri = newUri;
+        if (spotifyEmbedController && typeof spotifyEmbedController.loadUri === "function") {
+          spotifyEmbedController.loadUri(newUri);
+        }
+      });
+
+      // Intentamos crear el controller también después de 1s por si la API ya estuvo cargada antes
+      // (defensivo)
+      setTimeout(tryCreateController, 1000);
+
+      // Limpieza al dejar la página: quitar listeners si fue creado el controller
+      window.addEventListener("unload", function () {
+        try {
+          if (spotifyEmbedController) {
+            if (playbackUpdateHandler) {
+              spotifyEmbedController.removeListener && spotifyEmbedController.removeListener("playback_update", playbackUpdateHandler);
+            }
+          }
+        } catch (err) {
+          console.warn("Error al limpiar listeners:", err);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
